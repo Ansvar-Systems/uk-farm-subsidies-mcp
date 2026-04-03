@@ -1,15 +1,56 @@
 {
+  "schema_version": "1.0",
   "mcp_name": "UK Farm Subsidies MCP",
   "jurisdiction": "GB",
   "build_date": "2026-04-03",
-  "source": "GOV.UK Content API",
-  "schemes": 2,
-  "scheme_options": 234,
-  "scheme_options_sfi": 102,
-  "scheme_options_cs_higher_tier": 132,
-  "scheme_options_with_payment_rate": 234,
-  "scheme_options_with_duration": 234,
-  "cross_compliance_requirements": 22,
-  "fts_entries": 260,
-  "source_hash": "4b608224e7fe5f54"
+  "sources": [
+    {
+      "id": "govuk-sfi",
+      "name": "GOV.UK Content API (SFI)",
+      "authority": "DEFRA / RPA",
+      "version": "current",
+      "item_count": 102,
+      "item_type": "scheme_options",
+      "last_refresh": "2026-04-03",
+      "refresh_frequency": "monthly",
+      "completeness": 1.0,
+      "completeness_note": "All SFI farming grant actions from GOV.UK Content API."
+    },
+    {
+      "id": "govuk-cs-higher-tier",
+      "name": "GOV.UK Content API (CS Higher Tier)",
+      "authority": "DEFRA / Natural England",
+      "version": "current",
+      "item_count": 132,
+      "item_type": "scheme_options",
+      "last_refresh": "2026-04-03",
+      "refresh_frequency": "monthly",
+      "completeness": 1.0,
+      "completeness_note": "All Countryside Stewardship Higher Tier farming grant actions from GOV.UK Content API."
+    },
+    {
+      "id": "defra-cross-compliance",
+      "name": "DEFRA Cross-Compliance (GAEC/SMR)",
+      "authority": "DEFRA",
+      "version": "current",
+      "item_count": 22,
+      "item_type": "cross_compliance_requirements",
+      "last_refresh": "2026-04-03",
+      "refresh_frequency": "annual",
+      "completeness": 1.0,
+      "completeness_note": "All 9 GAEC standards and 13 SMR requirements for England."
+    }
+  ],
+  "gaps": [
+    "Northern Ireland agri-environment schemes not included",
+    "Historical scheme data (pre-2024) not included",
+    "Capital grants not included",
+    "Payment calculations for combined options not modeled"
+  ],
+  "summary": {
+    "schemes": 2,
+    "scheme_options": 234,
+    "cross_compliance_requirements": 22,
+    "fts_entries": 260
+  }
 }

@@ -7,10 +7,13 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-    read_only: false
+    read_only: false  # SQLite requires write access
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
     tmpfs:
       - /tmp
+    pids_limit: 50
+    cpus: 0.5
+    mem_limit: 128m

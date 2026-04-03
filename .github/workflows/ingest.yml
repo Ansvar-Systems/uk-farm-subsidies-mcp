@@ -2,8 +2,13 @@ name: Re-ingest Data
 
 on:
   schedule:
-    - cron: "0 4 1 * *"  # Monthly, 1st at 04:00 UTC
+    - cron: "0 4 1 * *"
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Force full rebuild even if no changes detected"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -18,8 +23,34 @@ jobs:
           node-version: "20"
           cache: npm
       - run: npm ci
-      - run: npm run ingest
+
+      - name: Fetch upstream data
+        run: npm run ingest:fetch
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if [ "${{ inputs.force }}" = "true" ] || npm run ingest:diff 2>&1 | grep -q "changes detected"; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No upstream changes detected. Skipping rebuild."
+          fi
+
+      - name: Rebuild database
+        if: steps.diff.outputs.changed == 'true'
+        run: npm run ingest:full
+
+      - name: Run tests
+        if: steps.diff.outputs.changed == 'true'
+        run: npm test
+
+      - name: Update coverage
+        if: steps.diff.outputs.changed == 'true'
+        run: npm run coverage:update
+
       - name: Commit updated database
+        if: steps.diff.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

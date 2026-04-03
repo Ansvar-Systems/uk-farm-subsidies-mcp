@@ -18,6 +18,8 @@
     "typecheck": "tsc --noEmit",
     "ingest": "tsx scripts/ingest.ts",
     "ingest:fetch": "tsx scripts/ingest.ts --fetch-only",
+    "ingest:diff": "tsx scripts/ingest.ts --diff-only",
+    "ingest:full": "tsx scripts/ingest.ts --force",
     "build:db": "tsx scripts/build-db.ts",
     "freshness:check": "tsx scripts/check-freshness.ts",
     "coverage:update": "tsx scripts/update-coverage.ts"

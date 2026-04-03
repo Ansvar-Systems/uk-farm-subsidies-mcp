@@ -13,6 +13,8 @@
  * Usage:
  *   npm run ingest           -- full ingestion
  *   npm run ingest:fetch     -- fetch and cache JSON only (no DB writes)
+ *   npm run ingest:diff      -- fetch, compare with cache, report if changed
+ *   npm run ingest:full      -- full rebuild ignoring cache
  */
 
 import { createDatabase, type Database } from '../src/db.js';
@@ -26,7 +28,11 @@ const CONTENT_API = 'https://www.gov.uk/api/content';
 const PAGE_SIZE = 50;
 const API_DELAY_MS = 200;
 const CACHE_DIR = 'data/.cache';
-const FETCH_ONLY = process.argv.includes('--fetch-only');
+
+const args = process.argv.slice(2);
+const diffOnly = args.includes('--diff-only');
+const fetchOnly = args.includes('--fetch-only');
+const force = args.includes('--force');
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -113,7 +119,7 @@ async function fetchContentDetail(link: string): Promise<ContentDetail | null> {
   const cacheKey = createHash('md5').update(link).digest('hex');
   const cachePath = `${CACHE_DIR}/${cacheKey}.json`;
 
-  if (existsSync(cachePath)) {
+  if (!force && existsSync(cachePath)) {
     try {
       return JSON.parse(readFileSync(cachePath, 'utf-8')) as ContentDetail;
     } catch { /* fall through to fetch */ }
@@ -777,7 +783,30 @@ async function main(): Promise<void> {
   const totalFailed = sfiSearch.failed + csSearch.failed;
   const allActions = [...sfiActions, ...csActions];
 
-  if (FETCH_ONLY) {
+  if (diffOnly) {
+    // Compare fetched data against the stored source hash
+    const currentHash = createHash('sha256')
+      .update(JSON.stringify(allActions.map(a => a.code).sort()))
+      .digest('hex')
+      .slice(0, 16);
+
+    let previousHash = '';
+    try {
+      const prev = JSON.parse(readFileSync('data/coverage.json', 'utf-8'));
+      previousHash = prev.source_hash || '';
+    } catch { /* no previous coverage */ }
+
+    if (currentHash !== previousHash) {
+      console.log('changes detected');
+      console.log(`  Previous hash: ${previousHash || '(none)'}`);
+      console.log(`  Current hash:  ${currentHash}`);
+    } else {
+      console.log('no changes');
+    }
+    return;
+  }
+
+  if (fetchOnly) {
     console.log('\n--fetch-only: skipping database writes.');
     console.log(`Cached ${allActions.length} action details in ${CACHE_DIR}/`);
     return;
