@@ -1,13 +1,14 @@
 /**
  * UK Farm Subsidies MCP -- Data Ingestion Script
  *
- * Fetches all SFI actions from the GOV.UK Content API, parses payment rates,
- * eligibility, and duration from the HTML body, then inserts into SQLite.
- * Also seeds cross-compliance (GAEC/SMR) reference data.
+ * Fetches all farming grant actions from the GOV.UK Content API, parses
+ * payment rates, eligibility, and duration from the HTML body, then inserts
+ * into SQLite. Also seeds cross-compliance (GAEC/SMR) reference data.
  *
  * Sources:
  *   1. GOV.UK Content API -- SFI farming_grant documents (102 actions)
- *   2. Cross-compliance GAEC/SMR -- curated reference data
+ *   2. GOV.UK Content API -- CS Higher Tier farming_grant documents (132 actions)
+ *   3. Cross-compliance GAEC/SMR -- curated reference data
  *
  * Usage:
  *   npm run ingest           -- full ingestion
@@ -80,18 +81,21 @@ async function fetchJson<T>(url: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-async function fetchAllSearchResults(): Promise<SearchResult[]> {
+async function fetchAllSearchResults(
+  grantType: string,
+  label: string
+): Promise<SearchResult[]> {
   const results: SearchResult[] = [];
   let start = 0;
 
   while (true) {
     const url =
       `${SEARCH_API}?filter_document_type=farming_grant` +
-      `&filter_farming_grant_type=sustainable-farming-incentive` +
+      `&filter_farming_grant_type=${grantType}` +
       `&count=${PAGE_SIZE}&start=${start}` +
       `&fields=title,link,description,farming_grant_type,land_types,areas_of_interest`;
 
-    console.log(`  Fetching search results start=${start}...`);
+    console.log(`  Fetching ${label} search results start=${start}...`);
     const data = await fetchJson<{ results: SearchResult[]; total: number }>(url);
     results.push(...data.results);
 
@@ -100,7 +104,7 @@ async function fetchAllSearchResults(): Promise<SearchResult[]> {
     await sleep(API_DELAY_MS);
   }
 
-  console.log(`  Found ${results.length} SFI actions.`);
+  console.log(`  Found ${results.length} ${label} actions.`);
   return results;
 }
 
@@ -487,26 +491,58 @@ const CROSS_COMPLIANCE: CrossComplianceEntry[] = [
 
 // ── Database Insertion ──────────────────────────────────────────
 
-function insertScheme(db: Database): void {
+interface SchemeDefinition {
+  id: string;
+  name: string;
+  scheme_type: string;
+  authority: string;
+  status: string;
+  start_date: string;
+  description: string;
+  eligibility_summary: string;
+  application_window: string;
+  jurisdiction: string;
+}
+
+const SCHEME_SFI: SchemeDefinition = {
+  id: 'sustainable-farming-incentive',
+  name: 'Sustainable Farming Incentive',
+  scheme_type: 'agri-environment',
+  authority: 'DEFRA / RPA',
+  status: 'open',
+  start_date: '2023-01-01',
+  description: 'Pays farmers for sustainable farming actions that support food production and benefit the environment. Part of the Environmental Land Management (ELM) scheme replacing the EU Common Agricultural Policy Basic Payment Scheme.',
+  eligibility_summary: 'Must have at least 1 hectare of eligible land registered on the Rural Payments service. Must be the land manager of the land.',
+  application_window: 'Rolling application -- apply any time via the Rural Payments service',
+  jurisdiction: 'GB',
+};
+
+const SCHEME_CS: SchemeDefinition = {
+  id: 'countryside-stewardship',
+  name: 'Countryside Stewardship',
+  scheme_type: 'agri-environment',
+  authority: 'DEFRA / Natural England',
+  status: 'open',
+  start_date: '2015-01-01',
+  description: 'Provides financial incentives for land managers to look after their environment by conserving and restoring wildlife habitats, managing flood risk, and maintaining woodland. The Higher Tier targets the most environmentally significant sites, commons, and woodland.',
+  eligibility_summary: 'Must be the land manager of eligible land. Higher Tier requires a Natural England or Forestry Commission agreement. Land must meet specific environmental criteria.',
+  application_window: 'Annual application window -- typically February to July',
+  jurisdiction: 'GB',
+};
+
+function insertScheme(db: Database, scheme: SchemeDefinition): void {
   db.run(
     `INSERT OR REPLACE INTO schemes (id, name, scheme_type, authority, status, start_date, description, eligibility_summary, application_window, jurisdiction)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      'sustainable-farming-incentive',
-      'Sustainable Farming Incentive',
-      'agri-environment',
-      'DEFRA / RPA',
-      'open',
-      '2023-01-01',
-      'Pays farmers for sustainable farming actions that support food production and benefit the environment. Part of the Environmental Land Management (ELM) scheme replacing the EU Common Agricultural Policy Basic Payment Scheme.',
-      'Must have at least 1 hectare of eligible land registered on the Rural Payments service. Must be the land manager of the land.',
-      'Rolling application -- apply any time via the Rural Payments service',
-      'GB',
+      scheme.id, scheme.name, scheme.scheme_type, scheme.authority, scheme.status,
+      scheme.start_date, scheme.description, scheme.eligibility_summary,
+      scheme.application_window, scheme.jurisdiction,
     ]
   );
 }
 
-function insertAction(db: Database, action: ParsedAction): void {
+function insertAction(db: Database, action: ParsedAction, schemeId: string): void {
   const optionId = action.code ? action.code.toLowerCase() : action.link.split('/').pop() || '';
 
   db.run(
@@ -515,7 +551,7 @@ function insertAction(db: Database, action: ParsedAction): void {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       optionId,
-      'sustainable-farming-incentive',
+      schemeId,
       action.code || null,
       action.name,
       action.description || null,
@@ -540,14 +576,19 @@ function insertCrossCompliance(db: Database): void {
   }
 }
 
-function buildSearchIndex(db: Database, actions: ParsedAction[]): number {
+function buildSearchIndex(
+  db: Database,
+  sfiActions: ParsedAction[],
+  csActions: ParsedAction[]
+): number {
   // Clear existing FTS entries
   db.run('DELETE FROM search_index');
 
   let count = 0;
+  const allActions = [...sfiActions, ...csActions];
 
-  // Index each SFI action
-  for (const a of actions) {
+  // Index each action (SFI + CS)
+  for (const a of allActions) {
     const title = a.code ? `${a.code}: ${a.name}` : a.name;
     const body = [
       a.name,
@@ -572,14 +613,14 @@ function buildSearchIndex(db: Database, actions: ParsedAction[]): number {
       'DEFRA SFI scheme paying farmers for sustainable farming actions. Rolling applications year-round. ' +
       'Actions cover soil health, hedgerows, nutrient management, pest management, wildlife habitats, ' +
       'water quality, moorland management, agroforestry, organic farming, and precision farming. ' +
-      `${actions.length} actions available.`,
+      `${sfiActions.length} actions available.`,
       'agri-environment',
       'GB',
     ]
   );
   count++;
 
-  // Index application guidance
+  // Index SFI application guidance
   db.run(
     'INSERT INTO search_index (title, body, scheme_type, jurisdiction) VALUES (?, ?, ?, ?)',
     [
@@ -588,6 +629,37 @@ function buildSearchIndex(db: Database, actions: ParsedAction[]): number {
       'Rolling applications accepted year-round. You need a Customer Reference Number (CRN) ' +
       'and at least 1 hectare of eligible land registered with RPA. Agreement lasts 3 years. ' +
       'Can apply for multiple actions on the same or different land parcels.',
+      'agri-environment',
+      'GB',
+    ]
+  );
+  count++;
+
+  // Index CS Higher Tier scheme overview
+  db.run(
+    'INSERT INTO search_index (title, body, scheme_type, jurisdiction) VALUES (?, ?, ?, ?)',
+    [
+      'Countryside Stewardship Higher Tier',
+      'DEFRA / Natural England Countryside Stewardship Higher Tier scheme providing financial incentives ' +
+      'for land managers to conserve and restore wildlife habitats, manage flood risk, and maintain woodland. ' +
+      'Targets the most environmentally significant sites, commons, and woodland. ' +
+      'Annual application window, typically February to July. Requires Natural England agreement. ' +
+      `${csActions.length} actions available.`,
+      'agri-environment',
+      'GB',
+    ]
+  );
+  count++;
+
+  // Index CS application guidance
+  db.run(
+    'INSERT INTO search_index (title, body, scheme_type, jurisdiction) VALUES (?, ?, ?, ?)',
+    [
+      'How to Apply for Countryside Stewardship Higher Tier',
+      'Apply for Countryside Stewardship Higher Tier through Natural England. ' +
+      'Annual application window, typically February to July. Requires a Natural England or Forestry Commission agreement. ' +
+      'Land must meet specific environmental criteria. Agreement duration is typically 5 or 10 years. ' +
+      'Can include capital items alongside revenue options.',
       'agri-environment',
       'GB',
     ]
@@ -621,24 +693,31 @@ function updateMetadata(db: Database, actionCount: number, ftsCount: number): vo
   db.run("INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('source', 'GOV.UK Content API')", []);
 }
 
-function writeCoverage(actions: ParsedAction[], ftsCount: number): void {
+function writeCoverage(
+  sfiActions: ParsedAction[],
+  csActions: ParsedAction[],
+  ftsCount: number
+): void {
   const now = new Date().toISOString().split('T')[0];
-  const withRate = actions.filter(a => a.paymentRate !== null).length;
-  const withDuration = actions.filter(a => a.durationYears !== null).length;
+  const allActions = [...sfiActions, ...csActions];
+  const withRate = allActions.filter(a => a.paymentRate !== null).length;
+  const withDuration = allActions.filter(a => a.durationYears !== null).length;
 
   const coverage = {
     mcp_name: 'UK Farm Subsidies MCP',
     jurisdiction: 'GB',
     build_date: now,
     source: 'GOV.UK Content API',
-    schemes: 1,
-    scheme_options: actions.length,
+    schemes: 2,
+    scheme_options: allActions.length,
+    scheme_options_sfi: sfiActions.length,
+    scheme_options_cs_higher_tier: csActions.length,
     scheme_options_with_payment_rate: withRate,
     scheme_options_with_duration: withDuration,
     cross_compliance_requirements: CROSS_COMPLIANCE.length,
     fts_entries: ftsCount,
     source_hash: createHash('sha256')
-      .update(JSON.stringify(actions.map(a => a.code).sort()))
+      .update(JSON.stringify(allActions.map(a => a.code).sort()))
       .digest('hex')
       .slice(0, 16),
   };
@@ -649,19 +728,12 @@ function writeCoverage(actions: ParsedAction[], ftsCount: number): void {
 
 // ── Main ────────────────────────────────────────────────────────
 
-async function main(): Promise<void> {
-  mkdirSync('data', { recursive: true });
-  mkdirSync(CACHE_DIR, { recursive: true });
+async function fetchAndParseActions(
+  grantType: string,
+  label: string
+): Promise<{ actions: ParsedAction[]; failed: number }> {
+  const searchResults = await fetchAllSearchResults(grantType, label);
 
-  console.log('UK Farm Subsidies MCP -- Data Ingestion');
-  console.log('====================================\n');
-
-  // Step 1: Fetch all SFI actions from search API
-  console.log('Step 1: Fetching SFI action list from GOV.UK...');
-  const searchResults = await fetchAllSearchResults();
-
-  // Step 2: Fetch detail for each action
-  console.log('\nStep 2: Fetching detail for each action...');
   const actions: ParsedAction[] = [];
   let fetched = 0;
   let failed = 0;
@@ -673,7 +745,7 @@ async function main(): Promise<void> {
       actions.push(action);
       fetched++;
       if (fetched % 10 === 0) {
-        console.log(`  Fetched ${fetched}/${searchResults.length}...`);
+        console.log(`  Fetched ${fetched}/${searchResults.length} ${label}...`);
       }
     } else {
       failed++;
@@ -681,11 +753,33 @@ async function main(): Promise<void> {
     await sleep(API_DELAY_MS);
   }
 
-  console.log(`  Fetched ${fetched} action details (${failed} failed).`);
+  console.log(`  Fetched ${fetched} ${label} details (${failed} failed).`);
+  return { actions, failed };
+}
+
+async function main(): Promise<void> {
+  mkdirSync('data', { recursive: true });
+  mkdirSync(CACHE_DIR, { recursive: true });
+
+  console.log('UK Farm Subsidies MCP -- Data Ingestion');
+  console.log('====================================\n');
+
+  // Step 1: Fetch all SFI actions from search API
+  console.log('Step 1: Fetching SFI action list from GOV.UK...');
+  const sfiSearch = await fetchAndParseActions('sustainable-farming-incentive', 'SFI');
+  const sfiActions = sfiSearch.actions;
+
+  // Step 2: Fetch all CS Higher Tier actions from search API
+  console.log('\nStep 2: Fetching CS Higher Tier action list from GOV.UK...');
+  const csSearch = await fetchAndParseActions('countryside-stewardship-higher-tier', 'CS Higher Tier');
+  const csActions = csSearch.actions;
+
+  const totalFailed = sfiSearch.failed + csSearch.failed;
+  const allActions = [...sfiActions, ...csActions];
 
   if (FETCH_ONLY) {
     console.log('\n--fetch-only: skipping database writes.');
-    console.log(`Cached ${fetched} action details in ${CACHE_DIR}/`);
+    console.log(`Cached ${allActions.length} action details in ${CACHE_DIR}/`);
     return;
   }
 
@@ -703,14 +797,24 @@ async function main(): Promise<void> {
     db.run('DELETE FROM cross_compliance');
 
     // Insert SFI scheme
-    insertScheme(db);
+    insertScheme(db, SCHEME_SFI);
     console.log('  Inserted SFI scheme.');
 
-    // Insert actions
-    for (const action of actions) {
-      insertAction(db, action);
+    // Insert CS Higher Tier scheme
+    insertScheme(db, SCHEME_CS);
+    console.log('  Inserted CS Higher Tier scheme.');
+
+    // Insert SFI actions
+    for (const action of sfiActions) {
+      insertAction(db, action, SCHEME_SFI.id);
     }
-    console.log(`  Inserted ${actions.length} scheme options.`);
+    console.log(`  Inserted ${sfiActions.length} SFI scheme options.`);
+
+    // Insert CS Higher Tier actions
+    for (const action of csActions) {
+      insertAction(db, action, SCHEME_CS.id);
+    }
+    console.log(`  Inserted ${csActions.length} CS Higher Tier scheme options.`);
 
     // Insert cross-compliance
     insertCrossCompliance(db);
@@ -718,30 +822,35 @@ async function main(): Promise<void> {
 
     // Build FTS5 index
     console.log('\nStep 4: Building FTS5 search index...');
-    const ftsCount = buildSearchIndex(db, actions);
+    const ftsCount = buildSearchIndex(db, sfiActions, csActions);
     console.log(`  Created ${ftsCount} FTS5 entries.`);
 
     // Update metadata
-    updateMetadata(db, actions.length, ftsCount);
+    updateMetadata(db, allActions.length, ftsCount);
 
     db.instance.exec('COMMIT');
 
     // Write coverage.json
     console.log('\nStep 5: Writing coverage data...');
-    writeCoverage(actions, ftsCount);
+    writeCoverage(sfiActions, csActions, ftsCount);
 
     // Summary
     console.log('\nIngestion complete.');
     console.log('-------------------');
-    console.log(`  Schemes:              1`);
-    console.log(`  Scheme options (SFI): ${actions.length}`);
+    console.log(`  Schemes:              2`);
+    console.log(`  Scheme options (SFI): ${sfiActions.length}`);
+    console.log(`  Scheme options (CS):  ${csActions.length}`);
+    console.log(`  Scheme options total: ${allActions.length}`);
     console.log(`  Cross-compliance:     ${CROSS_COMPLIANCE.length}`);
     console.log(`  FTS5 entries:         ${ftsCount}`);
-    console.log(`  Actions with rate:    ${actions.filter(a => a.paymentRate !== null).length}`);
-    console.log(`  Actions with duration:${actions.filter(a => a.durationYears !== null).length}`);
+    console.log(`  Actions with rate:    ${allActions.filter(a => a.paymentRate !== null).length}`);
+    console.log(`  Actions with duration:${allActions.filter(a => a.durationYears !== null).length}`);
+    if (totalFailed > 0) {
+      console.log(`  Fetch failures:       ${totalFailed}`);
+    }
 
     // Log any actions without parsed payment rates
-    const missingRates = actions.filter(a => a.paymentRate === null);
+    const missingRates = allActions.filter(a => a.paymentRate === null);
     if (missingRates.length > 0) {
       console.log(`\n  WARN: ${missingRates.length} actions missing payment rate:`);
       for (const a of missingRates) {

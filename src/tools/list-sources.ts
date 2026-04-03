@@ -27,6 +27,16 @@ export function handleListSources(db: Database): { sources: Source[]; _meta: Ret
       last_retrieved: lastIngest?.value,
     },
     {
+      name: 'Countryside Stewardship Higher Tier',
+      authority: 'Department for Environment, Food and Rural Affairs / Natural England',
+      official_url: 'https://www.gov.uk/government/collections/countryside-stewardship',
+      retrieval_method: 'HTML_SCRAPE',
+      update_frequency: 'quarterly',
+      license: 'Open Government Licence v3',
+      coverage: 'CS Higher Tier options, payment rates, eligibility criteria, and agreement guidance',
+      last_retrieved: lastIngest?.value,
+    },
+    {
       name: 'RPA Scheme Manuals',
       authority: 'Rural Payments Agency',
       official_url: 'https://www.gov.uk/government/organisations/rural-payments-agency',

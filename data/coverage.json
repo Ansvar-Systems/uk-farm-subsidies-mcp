@@ -3,11 +3,13 @@
   "jurisdiction": "GB",
   "build_date": "2026-04-03",
   "source": "GOV.UK Content API",
-  "schemes": 1,
-  "scheme_options": 102,
-  "scheme_options_with_payment_rate": 102,
-  "scheme_options_with_duration": 102,
+  "schemes": 2,
+  "scheme_options": 234,
+  "scheme_options_sfi": 102,
+  "scheme_options_cs_higher_tier": 132,
+  "scheme_options_with_payment_rate": 234,
+  "scheme_options_with_duration": 234,
   "cross_compliance_requirements": 22,
-  "fts_entries": 126,
-  "source_hash": "0b52e783be0ca0b0"
+  "fts_entries": 260,
+  "source_hash": "4b608224e7fe5f54"
 }
