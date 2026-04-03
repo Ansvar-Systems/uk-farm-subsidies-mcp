@@ -1,0 +1,5 @@
+{
+  "description": "Content hashes for diff-based re-ingestion. Updated by scripts/ingest.ts.",
+  "last_updated": "2026-04-03",
+  "hashes": {}
+}
