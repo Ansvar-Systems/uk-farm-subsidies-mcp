@@ -1,4 +1,5 @@
 import { buildMeta } from '../metadata.js';
+import { buildCitation } from '../citation.js';
 import { validateJurisdiction } from '../jurisdiction.js';
 import type { Database } from '../db.js';
 
@@ -25,7 +26,17 @@ export function handleGetCrossCompliance(db: Database, args: CrossComplianceArgs
       return { error: 'not_found', message: `Requirement '${args.requirement_id}' not found.` };
     }
 
-    return { ...req, _meta: buildMeta({ source_url: 'https://www.gov.uk/guidance/cross-compliance' }) };
+    return {
+      ...req,
+      _meta: buildMeta({ source_url: 'https://www.gov.uk/guidance/cross-compliance' }),
+      _citation: buildCitation(
+        `UK Cross-Compliance: ${req.requirement}`,
+        `${req.requirement} — ${req.category} (${jv.jurisdiction})`,
+        'get_cross_compliance',
+        { requirement_id: args.requirement_id },
+        'https://www.gov.uk/guidance/cross-compliance',
+      ),
+    };
   }
 
   if (args.topic) {

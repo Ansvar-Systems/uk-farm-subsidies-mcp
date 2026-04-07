@@ -1,4 +1,5 @@
 import { buildMeta } from '../metadata.js';
+import { buildCitation } from '../citation.js';
 import { validateJurisdiction } from '../jurisdiction.js';
 import type { Database } from '../db.js';
 
@@ -36,5 +37,11 @@ export function handleGetSchemeDetails(db: Database, args: SchemeDetailsArgs) {
     options_count: options.length,
     options,
     _meta: buildMeta(),
+    _citation: buildCitation(
+      `UK Scheme: ${scheme.name}`,
+      `${scheme.name} — ${scheme.scheme_type} (${jv.jurisdiction})`,
+      'get_scheme_details',
+      { scheme_id: args.scheme_id },
+    ),
   };
 }
