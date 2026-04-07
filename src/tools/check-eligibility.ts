@@ -1,4 +1,5 @@
 import { buildMeta } from '../metadata.js';
+import { buildCitation } from '../citation.js';
 import { validateJurisdiction } from '../jurisdiction.js';
 import type { Database } from '../db.js';
 
@@ -68,5 +69,11 @@ export function handleCheckEligibility(db: Database, args: EligibilityArgs) {
       ? 'No matching options found. Try broader search terms or use search_schemes for free-text search.'
       : 'Eligibility is indicative only. Check the full scheme manual for definitive criteria.',
     _meta: buildMeta(),
+    _citation: buildCitation(
+      `UK Subsidy Eligibility Check`,
+      `Eligibility check: ${[args.land_type, args.farm_type].filter(Boolean).join(', ') || 'all'} (${jv.jurisdiction})`,
+      'check_eligibility',
+      { ...(args.land_type && { land_type: args.land_type }), ...(args.farm_type && { farm_type: args.farm_type }) },
+    ),
   };
 }

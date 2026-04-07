@@ -1,4 +1,5 @@
 import { buildMeta } from '../metadata.js';
+import { buildCitation } from '../citation.js';
 import { validateJurisdiction } from '../jurisdiction.js';
 import type { Database } from '../db.js';
 
@@ -58,5 +59,11 @@ export function handleGetPaymentRates(db: Database, args: PaymentRatesArgs) {
       stacking_rules: o.stacking_rules,
     })),
     _meta: buildMeta(),
+    _citation: buildCitation(
+      `UK Scheme Payment: ${scheme.name}`,
+      `Payment rates for ${scheme.name} (${jv.jurisdiction})`,
+      'get_payment_rates',
+      { scheme_id: args.scheme_id },
+    ),
   };
 }
