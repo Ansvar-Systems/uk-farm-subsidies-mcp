@@ -9,15 +9,13 @@ RUN npm run build
 
 FROM node:20-slim
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nodejs
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force && apt-get purge -y python3 make g++ && apt-get autoremove -y
 COPY --from=builder /app/dist dist/
 COPY data/ data/
-RUN chown -R nodejs:nodejs /app/data
-USER nodejs
+RUN chown -R node:node /app/data
+USER node
 ENV NODE_ENV=production
 ENV PORT=3000
 EXPOSE 3000
